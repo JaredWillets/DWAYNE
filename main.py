@@ -1,3 +1,6 @@
+import os
+if "QT_QPA_PLATFORM" not in os.environ:
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
 import sys
 import psutil
 from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout, QLineEdit, QPushButton
@@ -9,7 +12,6 @@ class DWAYNE(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Make window frameless, transparent, and attempt to keep it on bottom
         self.setWindowFlags(
             Qt.FramelessWindowHint |
             Qt.Tool
@@ -17,20 +19,17 @@ class DWAYNE(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
 
-        # Position window (x=20, y=20) and size
+        self.setFocusPolicy(Qt.StrongFocus)
+
         self.move(20,20)
-        # self.setGeometry(20, 20, 250, 100)
-        #
-        self.setStyleSheet("background-color: transparent;")
+        
+        self.setStyleSheet("background-color: red;")
 
         self.v_layout = QVBoxLayout(self)
 
         self.githubGrid = GitHubWidget(self)
         self.v_layout.addWidget(self.githubGrid)
 
-        # Add PayClockWidget
-        self.payclock = PayClockWidget(self)
-        self.v_layout.addWidget(self.payclock)
 
         self.labels = {
             "stats":QLabel(self),
@@ -42,58 +41,72 @@ class DWAYNE(QWidget):
 
         self.labels["stats"].setFont(QFont("Courier", 11))
         self.labels["stats"].setStyleSheet("color: white; background: transparent;")
-        self.update_loop()
 
-
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_loop)
-        self.timer.start(1000)
-
-    def update_loop(self):
-        cpu = psutil.cpu_percent()
-        mem = psutil.virtual_memory().percent
-        net = psutil.net_io_counters()
-        self.labels["stats"].setText(
-            f"CPU: {cpu:.1f}%\nMem: {mem:.1f}%\n↑ {net.bytes_sent // 1024} KB\n↓ {net.bytes_recv // 1024} KB"
-        )
 
     def keyPressEvent(self, event):
+        print(event)
         if event.key() == Qt.Key_Escape:
             self.close()
         else:
             super().keyPressEvent(event)
 
+    def focusInEvent(self, event):
+        print("DWAYNE received focus")
+        super().focusInEvent(event)
+
+    def mousePressEvent(self, event):
+        print("Mouse pressed")
+        self.activateWindow()
+        self.setFocus(Qt.MouseFocusReason)
+        super().mousePressEvent(event)
+
     def closeEvent(self, event):
-        self.timer.stop()
         event.accept()
         QApplication.quit()
 
-if __name__ == '__main__':
+from Xlib import display, X, protocol
 
+def set_window_below(widget):
+    d = display.Display()
+
+    window = d.create_resource_object(
+        "window",
+        int(widget.winId())
+    )
+
+    root = d.screen().root
+
+    state = d.intern_atom("_NET_WM_STATE")
+    below = d.intern_atom("_NET_WM_STATE_BELOW")
+
+    event = protocol.event.ClientMessage(
+        window=window,
+        client_type=state,
+        data=(32, [
+            1,
+            below,
+            0,
+            1,
+            0
+        ])
+    )
+
+    root.send_event(
+        event,
+        event_mask=(
+            X.SubstructureRedirectMask |
+            X.SubstructureNotifyMask
+        )
+    )
+
+    d.flush()
+    d.close()
+
+if __name__ == "__main__":
     app = QApplication(sys.argv)
     widget = DWAYNE()
     widget.show()
-
-    # --- X11: Set window below all others (requires python-xlib) ---
-    try:
-        from Xlib import display, X, protocol
-        from PyQt5.QtGui import QWindow
-        # Get the X11 window id
-        win_id = int(widget.winId())
-        d = display.Display()
-        root = d.screen().root
-        NET_WM_STATE = d.intern_atom('_NET_WM_STATE')
-        NET_WM_STATE_BELOW = d.intern_atom('_NET_WM_STATE_BELOW')
-        ev = protocol.event.ClientMessage(
-            window=win_id,
-            client_type=NET_WM_STATE,
-            data=(32, [1, NET_WM_STATE_BELOW, 0, 0, 0])
-        )
-        root.send_event(ev, event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
-        d.flush()
-    except Exception as e:
-        print(f"Could not set window below: {e}")
-    # -------------------------------------------------------------
+    set_window_below(widget)
 
     try:
         sys.exit(app.exec_())
