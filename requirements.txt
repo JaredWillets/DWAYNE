@@ -1,4 +1,0 @@
-pyyaml
-psutil
-xlib
-requests
